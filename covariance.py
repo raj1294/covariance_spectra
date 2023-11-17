@@ -206,7 +206,6 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
     Pnoise = 0
     Prefnoise = 0
 
-    #This is fine
     if(stat=="Poissonian"):
         Pnoise = (2*(np.mean(lc) + np.mean(lcbkg))/(np.mean(lc))**2)
         Prefnoise = (2*(np.mean(reflc) + np.mean(refbkg))/(np.mean(reflc))**2)
@@ -244,9 +243,7 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
         #Remove negative frequency bins 
         Yn = Yn[fyn>0]
         fyn = fyn[fyn>0]
-        
-        #Should we be removing negative bins before conjugating?
-        
+                
         #Compute PSD and CPSD with 
         #rms-squared normalisation for each segment
         normpsdx = (2.0*dt)/((len(lctemp))*(np.mean(lctemp))**2)
@@ -371,22 +368,22 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
         plt.yscale("log")
         plt.show()
         
-        # # Time lag
-        # plt.figure()
-        # plt.errorbar(fb,timelag,xerr=(dfblo,dfbhi),yerr=dtimelag,fmt='k.')
-        # plt.xlabel("Frequency [Hz]",fontsize=12)
-        # plt.ylabel("Time lag [s]",fontsize=12)
-        # plt.xscale("log")
-        # plt.show()
+        # Time lag
+        plt.figure()
+        plt.errorbar(fb,timelag,xerr=(dfblo,dfbhi),yerr=dtimelag,fmt='k.')
+        plt.xlabel("Frequency [Hz]",fontsize=12)
+        plt.ylabel("Time lag [s]",fontsize=12)
+        plt.xscale("log")
+        plt.show()
         
-        # # Coherence
-        # plt.figure()
-        # plt.errorbar(fb,coherence,xerr=(dfblo,dfbhi),yerr=coherr,fmt='g.')
-        # plt.xlabel("Frequency [Hz]",fontsize=12)
-        # plt.ylabel("Intrinsic coherence",fontsize=12)
-        # plt.ylim(-1,2)
-        # plt.xscale("log")
-        # plt.show()
+        # Coherence
+        plt.figure()
+        plt.errorbar(fb,coherence,xerr=(dfblo,dfbhi),yerr=coherr,fmt='g.')
+        plt.xlabel("Frequency [Hz]",fontsize=12)
+        plt.ylabel("Intrinsic coherence",fontsize=12)
+        plt.ylim(-1,2)
+        plt.xscale("log")
+        plt.show()
         
     #Compute covariance and its error over a desired frequency range
     rmsx = np.sqrt((avgPx-Pnoise)*(dfb)*(np.mean(lc))**2)
@@ -417,17 +414,15 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
     covariance_err = covariance_err[isnanarr==False]
     
     # Average over desired frequency range and propagate errors on covariance    
-    mean_covariance = np.mean(covariance)
-    #Mean, sum or integral??
-    
+    summed_covariance = np.sum(covariance)    
     err_mcov = 0
     for index in range(len(covariance)):
         err_mcov += (covariance_err[index])**2
-    err_mcov = np.sqrt(err_mcov)/len(covariance)
+    err_mcov = np.sqrt(err_mcov)
     
-    print(mean_covariance/1e-4,err_mcov/1e-4)
+    print(summed_covariance/1e-4,err_mcov/1e-4)
     
-    return mean_covariance, err_mcov
+    return summed_covariance, err_mcov
 
 # Reference band light-curve (source)
 fname = "ref.fits"
