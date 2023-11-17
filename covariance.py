@@ -554,16 +554,16 @@ for file in sorted(glob.glob("epn*keV*.lc")):
     bgrnew = np.array(bgrnew)
     bgerrnew = np.array(bgerrnew)
         
-    # # Fractional variability
-    # fvar,fvarerr = Fracvar(rate,error)
-    # fvarc.append(fvar)
-    # fvarcerr.append(fvarerr)
+    # Fractional variability
+    fvar,fvarerr = Fracvar(rate,error)
+    fvarc.append(fvar)
+    fvarcerr.append(fvarerr)
     
     # Covariance    
     
-    # #Time domain
-    # intcovtd,intcoverrtd = covariance_time_domain(rnew,errnew,rnewref,\
-    #                                               errnewref,M)
+    #Time domain
+    intcovtd,intcoverrtd = covariance_time_domain(rnew,errnew,rnewref,\
+                                                  errnewref,M)
     
     #Frequency domain
     intcov,intcoverr = covariance_spectrum(rnew,errnew,rnewref,errnewref,\
