@@ -220,8 +220,7 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
         errrefsq/=len(reflcerr)
         Pnoise = (errsq/(fnyq*(np.mean(lc))**2))
         Prefnoise = (errrefsq/(fnyq*(np.mean(reflc))**2))
-    
-        
+
     #Average power spectrum and cross spectrum over M segments
     for k3 in range(Mseg):
         
@@ -273,15 +272,6 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
     # Implement frequency dependent binning of averaged PSDs and CPSD
     fb,avgPx,avgPy,avgCxy,avgPxerr,avgPyerr,avgCxyerr,Karr =\
     fbin(bfactor,favg,Pxavg,Pyavg,Cxyavg,dPxavg,dPyavg,dCxyavg)
-    
-    # #In case frequency dependent binning is not implemented:
-    # fb = favg
-    # avgPx = Pxavg
-    # avgPy = Pyavg
-    # avgCxy = Cxyavg
-    # avgPxerr = dPxavg
-    # avgPyerr = dPyavg
-    # avgCxyerr = dCxyavg
     
     avgPx = np.real(avgPx)
     avgPy = np.real(avgPy)
@@ -447,13 +437,6 @@ errorref = errorref[isnanarr==False]
 bgrateref = bgrateref[isnanarr==False]
 errbgrateref = errbgrateref[isnanarr==False]
 time = time[isnanarr==False]
-
-# plt.figure()
-# plt.errorbar(time,rateref,yerr=errorref,fmt='k.')
-# plt.show()
-
-# fvar,fvarerr = Fracvar(rateref,errorref)
-# print(fvar,fvarerr)
 
 #Deal with gaps in LC
 tstart = hdulist[2].data['START']
