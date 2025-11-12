@@ -7,9 +7,8 @@ import warnings
 from scipy import integrate
 from stingray import Lightcurve
 from stingray import AveragedCrossspectrum
-
+from scipy import integrate, signal
 import os, subprocess
-from scipy import signal
 warnings.filterwarnings('ignore')
 
 def remove_nans(arrays,tS,tE):
@@ -314,7 +313,7 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
             Prefnoise += errrefsq/(fnyq*(np.mean(reflctemp))**2) 
                 
         if(np.sum(lctemp)>0):
-                                                            
+                        
             #FFT of comparison-band LC
             Xn = 0.5*(fft.fft(lctemp+lctemperr)+fft.fft(lctemp-lctemperr)) 
             Xnerr = 0.5*(fft.fft(lctemp+lctemperr)-fft.fft(lctemp-lctemperr))
@@ -330,22 +329,22 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
             Ynconj = 0.5*(np.conj(Yn+Ynerr)+np.conj(Yn-Ynerr))
             Ynconjerr = 0.5*(np.conj(Yn+Ynerr)-np.conj(Yn-Ynerr))
             fyn = fft.fftfreq(len(reflctemp),d=Dt)
-                        
-            # # FFT of window function
-            # Wn = fft.fft(windowtemp)
-            # remx,Xn = signal.deconvolve(Xn,Wn)
-            # remy,Yn = signal.deconvolve(Yn,Wn)
             
+            # FFT of window function
+            Wn = fft.fft(windowtemp)
+            fwn = fft.fftfreq(len(windowtemp),d=Dt)
+            
+            remx,Xn = signal.deconvolve(Xn,Wn)
+            remy,Yn = signal.deconvolve(Yn,Wn)
+                        
             Xn = Xn[fxn>0] 
             Xnerr = Xnerr[fxn>0]
             Xnconj = Xnconj[fxn>0]
             Xnconjerr = Xnconjerr[fxn>0]
-            
             Yn = Yn[fyn>0]
             Ynerr = Ynerr[fyn>0]
             Ynconj = Ynconj[fyn>0]
             Ynconjerr = Ynconjerr[fyn>0]
-            
             fxn = fxn[fxn>0]
             fyn = fyn[fyn>0]
                                                                                         
@@ -355,7 +354,7 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
             normpsdy = (2.0*Dt)/((len(reflctemp))*(np.mean(reflctemp))**2)
             normcross = (2.0*Dt)/((len(lctemp))*(np.mean(lctemp))*\
                                  (np.mean(reflctemp)))
-                            
+        
             Psdx = normpsdx*Xnconj*Xn
             dPsdx = normpsdx*(Xnconjerr*Xn + Xnconj*Xnerr)
             Psdy = normpsdy*Ynconj*Yn
@@ -371,9 +370,6 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
                 Pxn.append(Psdx)
                 Pyn.append(Psdy)
                 Cxyn.append(Crossxy)
-                dPxn.append(dPsdx)
-                dPyn.append(dPsdy)
-                dCxyn.append(dCrossxy)
                 Msegnew += 1
     
     #Average ref band and comp band noise powers
@@ -411,10 +407,19 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
         if(bfactor>1):
             freqx,avgPx,avgPy,avgCxy,avgPxerr,avgPyerr,avgCxyerr,Karr =\
             fbin(bfactor,freqx,Pxavg,Pyavg,Cxyavg,dPxavg,dPyavg,dCxyavg)
-                                                            
+        
+        Karr = np.array(Karr)
+        avgPxerr = np.array(avgPxerr)
+        avgPyerr = np.array(avgPyerr)
+        avgCxyerr = np.array(avgCxyerr)
+        avgPx = np.array(avgPx)
+        avgPy = np.array(avgPy)
+        avgCxy = np.array(avgCxy)
+        freqx = np.array(freqx)
+
         # Averaged number of samples
         nsamples = Mseg*Karr
-                    
+                                    
         # Noise level of CPSD
         nbias = ((avgPx-Pnoise)*Prefnoise + (avgPy-Prefnoise)*Pnoise +\
                 (Pnoise*Prefnoise))/nsamples
@@ -434,24 +439,34 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
             
         # Raw Coherence
         coherence = Cxyamp/((avgPx)*(avgPy))
+        intcoherence = Cxyamp/((avgPx-Pnoise)*(avgPy-Prefnoise))
         
-        # Raw uncertainty on coherence
-        dcoherence = (avgPxerr)*((-Cxyamp*avgPx**-2)/(avgPy))**2 +\
-                     (avgPyerr)*((-Cxyamp*avgPy**-2)/(avgPx))**2 +\
-                     (Cxyamperr**2)/(avgPx*avgPy)**2
+        # # Raw uncertainty on coherence
+        # dcoherence = (avgPxerr)*((-Cxyamp*avgPx**-2)/(avgPy))**2 +\
+        #              (avgPyerr)*((-Cxyamp*avgPy**-2)/(avgPx))**2 +\
+        #              (Cxyamperr**2)/(avgPx*avgPy)**2
+        
 
+        
+        # Statistical uncertainty on raw coherence
+        dcoherence = ((2.0/(nsamples))**(0.5))*(1 - intcoherence**2)/\
+                     (abs(intcoherence))
+        
+        coherence = np.sqrt(coherence)
+        dcoherence = 0.5*(dcoherence)/(coherence)
+        
         # Compute covariance and its error over a desired frequency range
         rmsx = np.sqrt((avgPx-Pnoise)*(dfreqx)*(np.mean(lc))**2)
         rmsy = np.sqrt((avgPy-Prefnoise)*(dfreqx)*(np.mean(reflc))**2)
         rmsx_noise = np.sqrt((Pnoise)*((np.mean(lc))**2)*(dfreqx))
         rmsy_noise = np.sqrt((Prefnoise)*((np.mean(reflc))**2)*(dfreqx))
-        
         covariance = (np.mean(lc))*np.sqrt((Cxyamp*dfreqx)/(avgPy-Prefnoise))
+
         dcovsqterm = ((covariance**2)*(rmsy_noise**2)+\
                       (rmsy**2)*(rmsx_noise**2)+\
                       (rmsy_noise**2)*(rmsx_noise**2))/(2*nsamples*rmsy**2)
         covariance_err = np.sqrt(dcovsqterm)
-                                                
+                                                        
         # Filter over a specified frequency range
         covariance = covariance[freqx>fbmin]
         covariance_err = covariance_err[freqx>fbmin]
@@ -467,29 +482,10 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
         avgCxy = avgCxy[freqxfilt<fbmax]
         avgCxyerr = avgCxyerr[freqxfilt<fbmax]
         freqxfilt = freqxfilt[freqxfilt<fbmax]
-        
-        # # Filter on coherence
-        # coherence_thresh = 0.6
-        # covariance = covariance[coherence>coherence_thresh]
-        # covariance_err = covariance_err[coherence>coherence_thresh]
-        # avgCxy = avgCxy[coherence>coherence_thresh]
-        # avgCxyerr = avgCxyerr[coherence>coherence_thresh]
-        # freqxfilt = freqx[coherence>coherence_thresh]
-        # dcoherence = dcoherence[coherence>coherence_thresh]
-        # coherence = coherence[coherence>coherence_thresh]        
-        # covariance = covariance[coherence<coherence_thresh]
-        # covariance_err = covariance_err[coherence<coherence_thresh]
-        # avgCxy = avgCxy[coherence<coherence_thresh]
-        # avgCxyerr = avgCxyerr[coherence<coherence_thresh]
-        # freqxfilt = freqx[coherence<coherence_thresh]
-        # dcoherence = dcoherence[coherence<coherence_thresh]
-        # coherence = coherence[coherence<coherence_thresh]
-        
+                
         # Remove NANs
         isnancov = np.isnan(covariance)
         covariance = covariance[isnancov==False]
-        avgCxy = avgCxy[isnancov==False]
-        avgCxyerr = avgCxyerr[isnancov==False]
         coherence = coherence[isnancov==False]
         dcoherence = dcoherence[isnancov==False]
         covariance_err = covariance_err[isnancov==False]
@@ -500,10 +496,8 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
         covariance_err = covariance_err[isnancov==False]
         coherence = coherence[isnancov==False]
         dcoherence = dcoherence[isnancov==False]
-        avgCxy = avgCxy[isnancov==False]
-        avgCxyerr = avgCxyerr[isnancov==False]
         freqxfilt = freqxfilt[isnancov==False]
-        
+                        
         # Average over the above frequency range and propagate errors 
         # on covariance 
         mean_covariance = np.mean(covariance)
@@ -516,7 +510,7 @@ def covariance_spectrum(lc,lcerr,reflc,reflcerr,lcbkg,refbkg,Mseg,\
             mean_covariance = 0
             err_mcov = 0
         
-    return freqx, mean_covariance, err_mcov, avgCxy, avgCxyerr
+    return mean_covariance, err_mcov
 
 #Comparison with stingray
 from stingray.varenergyspectrum import CovarianceSpectrum
@@ -564,7 +558,7 @@ def covariance_spectrum_stingray(evfile,\
     covspecE = covspec.energy
     covspecspt = covspec.spectrum
     covspecspterr = covspec.spectrum_error
-        
+            
     isnanarrcov = np.isnan(covspecspt)
     covspecE = covspecE[isnanarrcov==False]
     covspecspt = covspecspt[isnanarrcov==False]
@@ -601,370 +595,418 @@ def make_lc(tarr,bintime,tstart,tstop,statlc):
 
 # Energy grid
 ks = 1000
-Nenergies = 15
 Emin = 0.3
 Emax = 12.0
-Energies = np.log10(np.logspace(Emin,Emax,Nenergies))
+energies = [0.3,0.5,0.7,0.9,1.5,2.0,2.5,3.0,3.5,4.0,4.5,6.0,6.2,6.5,7.0,\
+            8.0,10.0]
+Energies = np.array(energies)
+Nenergies = len(energies)
 refemin = 0.3
 refemax = 12.0
 
 # PSD parameters 
 bfactor = 1.0
-fminb = 1e-5
-fmaxb = 1e-1
-statpow = "NP"
+fminb = [0.5e-4,1.65e-4,0.96e-3]
+fmaxb = [1.65e-4,5.44e-4,2.98e-3]
+fminb = np.array(fminb)
+fmaxb = np.array(fmaxb)
+
+statpow = "Poissonian" #NP or Poissonian
 plot = "no"
 normpow = "abs"
 
 # Detector parameters
-tthresh = 40*ks
+tthresh = 20*ks
 groupscale = 1
 
-cov,dcov,covtd,dcovtd,fvarc,fvarcerr = [[],[],[],[],[],[]]
-energies,denergies = [[],[]]
-obsidnum = ["0405690201"]
-
-# #Covspec from stingray
-# refevfilest = "epn_net0852030101_obs1_ref.fits"
-# Mseg = 8
-# bsize = 100
-# covspecEst,covspecst,covspecerrst =\
-# covariance_spectrum_stingray(refevfilest,\
-# Mseg,bsize,fminb,fmaxb,refemin,refemax,\
-# energies_stingray,normpow)
-
-# infilest = "covfluxst1" + "_" + str(obsid) + ".dat"
-# outfilest = "covspecst1" + "_" + str(obsid) + ".pha"
-# groupfilest = "covspec_grouped_" + str(obsid) + "_st.pha"
-            
-for k in range(Nenergies-1):
+for k3z in range(len(fminb)):
     
-    reflccomb,errreflccomb,complccomb,errcomplccomb = [[],[],[],[]]
-    reflcbkgcomb,errreflcbkgcomb,complcbkgcomb,errcomplcbkgcomb =\
-    [[],[],[],[]]
-    
-    windowcomb = []
-    
-    for k2 in range(len(obsidnum)):
+    cov,dcov,covtd,dcovtd,fvarc,fvarcerr = [[],[],[],[],[],[]]
+    energies,denergies = [[],[]]
+    obsidnum = ["0306870101"]
             
-        for reflcfile in glob.glob("epn_net_obs" + obsidnum[k2] +\
-                                   "*en4*ref.lc"):
-                        
-            ennum = str(k+1)
-                        
-            #Reference band (source)
-            ObsId = reflcfile.split("obs")[1].split("_")[0]        
-                                    
-            reflcfile = "epn_net_obs" + str(ObsId) + "_1_en" +\
-                         str(ennum) + "_ref.lc"
-                        
-            refbkgfile = "epn_bkg_obs" + ObsId + "_1_en" +\
-                         str(ennum) + "_ref.lc"
-            
-            refevfile = "epn_net_obs" + ObsId + "_1_en" +\
-                         str(ennum) + "_ref.fits"
-                        
-            complcfile = "epn_net_obs" + ObsId + "_1_en" +\
-                         str(ennum) + "_comp.lc"
-            
-            compbkgfile = "epn_bkg_obs" + ObsId + "_1_en" +\
-                          str(ennum) + "_comp.lc"
-            
-            compevfile = "epn_net_obs" + ObsId + "_1_en" +\
-                         str(ennum) + "_comp.fits"
-            
-            infilecov = "covflux" + "_" + str(ObsId) + ".dat"
-            outfilecov = "covspec" + "_" + str(ObsId) + ".pha"
-            groupfilecov = "covspec_grouped_" + str(ObsId) + ".pha"
-                        
-            hdulistref = fits.open(reflcfile)
-            dataref = hdulistref[1].data
-            tstartR = hdulistref[2].data['START']
-            tstopR = hdulistref[2].data['STOP']
-            bsize = hdulistref[1].header['TIMEDEL']
-            telapse = hdulistref[1].header['EXPOSURE']
-            timeref = dataref['TIME']  
-            rateref = dataref['RATE']
-            errorref = dataref['ERROR']
-            
-            arraysW = np.transpose(np.column_stack((timeref,rateref)))
-            windowref = rect_window(arraysW,tstartR,tstopR)
-                            
-            #Choose Mseg depending on exposure time
-            Mseg = 0
-                        
-            if (telapse > 100*ks):
-                Mseg = 8
+    for k in range(Nenergies-1):
         
-            if (telapse > 50*ks and telapse <= 100*ks):
-                Mseg = 7
+        reflccomb,errreflccomb,complccomb,errcomplccomb = [[],[],[],[]]
+        reflcbkgcomb,errreflcbkgcomb,complcbkgcomb,errcomplcbkgcomb =\
+        [[],[],[],[]]
+        windowcomb = []
         
-            if (telapse > 25*ks and telapse <= 50*ks):
-                Mseg = 4
-        
-            if (telapse > 15*ks and telapse <= 25*ks):
+        for k2 in range(len(obsidnum)):
+            
+            if(k==0):
+            
+                #Covspec from stingray
+                refevfilest = "epn_net_0511580301_ref.fits"
                 Mseg = 2
-        
-            if (telapse <= 15*ks):
-                Mseg = 1
-                        
-            #Reference band (background)
-            hdulistref_bkg = fits.open(refbkgfile)
-            dataref_bkg = hdulistref_bkg[1].data
-            timerefbkg = dataref_bkg['TIME']  
-            raterefbkg = dataref_bkg['RATE']
-            errorrefbkg = dataref_bkg['ERROR']
-        
-            dateobs = hdulistref_bkg[0].header['DATE-OBS'].split("T")[0]
-            dateend = hdulistref_bkg[0].header['DATE-END'].split("T")[0]
-            timeobs = hdulistref_bkg[0].header['DATE-OBS'].split("T")[1]
-            timeend = hdulistref_bkg[0].header['DATE-END'].split("T")[1]
-            raobj = hdulistref_bkg[0].header['RA_OBJ']
-            decobj = hdulistref_bkg[0].header['DEC_OBJ']
-            telescope = hdulistref_bkg[0].header['TELESCOP']
-            filterobs = hdulistref_bkg[0].header['FILTER']
-            inst = hdulistref_bkg[0].header['INSTRUME']
-            tstartRbkg = hdulistref[2].data['START']
-            tstopRbkg = hdulistref[2].data['STOP']
-        
-            timeref = np.array(timeref)
-            rateref = np.array(rateref)
-            errorref = np.array(errorref)
-            raterefbkg = np.array(raterefbkg)
-            errorrefbkg = np.array(errorrefbkg)
-                                                                    
-            hdu3 = fits.open(complcfile)    
-            timecomp = hdu3[1].data['TIME']
-            ratecomp = hdu3[1].data['RATE']
-            errorcomp = hdu3[1].data['ERROR']
-            obsidcomp = hdu3[0].header['OBS_ID']
-            
-            hdu4 = fits.open(compbkgfile)    
-            ratecompbkg = hdu4[1].data['RATE']
-            errorcompbkg = hdu4[1].data['ERROR']
-            tstartC = hdu3[2].data['START']
-            tstopC = hdu3[2].data['STOP']
-            
-            #Remove BTIs and NANs from reference band and comparison band
-            arraysR = np.transpose(np.column_stack((rateref,errorref,\
-                      raterefbkg,errorrefbkg,ratecomp,errorcomp,\
-                      ratecompbkg,errorcompbkg,timeref)))
-            arraysR, arraysN = remove_nans(arraysR,tstartR,tstopR) 
-            timeref -= timeref[0]
-            timecomp = timeref
-            telapse = timecomp[-1] - timecomp[0]
-            
-            #Concatenate LC from a single observation horizontally 
-            #(to remove NANs)
-            rateref,errorref,raterefbkg,\
-            errorrefbkg,ratecomp,errorcomp,ratecompbkg,errorcompbkg,\
-            timeref = arraysN
-            bsizeref = timeref[1]-timeref[0]
-            timeref = np.arange(0,len(rateref),1)*bsizeref
-            timecomp = timeref   
-                                    
-            #Concatenate LCs from different observations
-            for k3 in range(len(rateref)):
+                bsize = 300
+                covspecEst,covspecst,covspecerrst =\
+                covariance_spectrum_stingray(refevfilest,\
+                Mseg,bsize,fminb[k3z],fmaxb[k3z],refemin,refemax,\
+                Energies,normpow)
                 
-                windowcomb.append(windowref[k3])
-                reflccomb.append(rateref[k3])
-                errreflccomb.append(errorref[k3])
-                complccomb.append(ratecomp[k3])
-                errcomplccomb.append(errorcomp[k3])
+                infilecovst = "covfluxst" + str(k3z+1) +\
+                "_" + str(obsidnum[k2]) + ".dat"
+                outfilecovst = "covspecst" + str(k3z+1) +\
+                "_" + str(obsidnum[k2]) + ".pha"
+                groupfilecovst = "covspecst" + str(k3z+1) +\
+                "_grouped_" + str(obsidnum[k2]) + ".pha"
                 
-                reflcbkgcomb.append(raterefbkg[k3])
-                errreflcbkgcomb.append(errorrefbkg[k3])
-                complcbkgcomb.append(ratecompbkg[k3])
-                errcomplcbkgcomb.append(errorcompbkg[k3])
-                
-    if(len(reflccomb)>0):
-        
-        windowcomb = np.array(windowcomb)
-        reflccomb = np.array(reflccomb)
-        errreflccomb = np.array(errreflccomb)
-        reflcbkgcomb = np.array(reflcbkgcomb)
-        errreflcbkgcomb = np.array(errreflcbkgcomb)
-        complccomb = np.array(complccomb)
-        errcomplccomb = np.array(errcomplccomb)
-        complcbkgcomb = np.array(complcbkgcomb)
-        errcomplcbkgcomb = np.array(errcomplcbkgcomb)
-        
-        complccomb = complccomb[reflccomb>0]
-        errcomplccomb = errcomplccomb[reflccomb>0]
-        errreflccomb = errreflccomb[reflccomb>0]
-        complcbkgcomb = complcbkgcomb[reflccomb>0]
-        errcomplcbkgcomb = errcomplcbkgcomb[reflccomb>0]
-        reflcbkgcomb = reflcbkgcomb[reflccomb>0]
-        errreflcbkgcomb = errreflcbkgcomb[reflccomb>0]
-        windowcomb = windowcomb[reflccomb>0]
-        reflccomb = reflccomb[reflccomb>0]
-        timecomb = np.arange(0,len(reflccomb),1)*bsize
-        
-        #Unfold spectrum using instrumental response      
-        rmffile = "EPN_" + str(ObsId) + "_1.rmf"
-        ancrfile = "EPN_" + str(ObsId) + "_1.arf"
-        specfile = "epn_spec1" + "_grp_" + str(ObsId) + ".fits"
-        infile = "covflux_" + str(ObsId) + ".dat"
-        outfile = "covspec_" + str(ObsId) + ".pha"
-                
-        hdulist2 = fits.open(specfile)
-        header2 = hdulist2[1].header
-        backscal = header2['BACKSCAL']
-        corrscal = header2['CORRSCAL']
-        areascal = header2['AREASCAL']
-        backfile = "NONE"
-            
-        # energymin = float(hdu3[1].header['CHANMIN'])/1000.
-        # energymax = float(hdu3[1].header['CHANMAX'])/1000.
-        # engy = 0.5*(energymin+energymax)
-        # dengy = 0.5*(energymax-energymin)
-        
-        energymin = round(Energies[k],3)
-        energymax = round(Energies[k+1],3)
-        engy = round(0.5*(Energies[k+1]+Energies[k]),3)
-        dengy = round(0.5*(Energies[k+1]-Energies[k]),3)
-                
-        energies.append(engy)
-        denergies.append(dengy)
+            for reflcfile in glob.glob("epn_net_obs" + obsidnum[k2] +\
+                                       "*en4*ref.lc"):
                                         
-        #Plot LCs
-        laben = str(float(energymin)) + "-" + str(float(energymax))
-        labelsrccomp = "Comparison band LC: " + laben + " keV"    
+                ennum = str(k+1)
+                            
+                #Reference band (source)
+                ObsId = reflcfile.split("obs")[1].split("_")[0]        
+                                        
+                reflcfile = "epn_net_obs" + str(ObsId) + "_1_en" +\
+                             str(ennum) + "_ref.lc"
+                            
+                refbkgfile = "epn_bkg_obs" + ObsId + "_1_en" +\
+                             str(ennum) + "_ref.lc"
                 
-        # plt.errorbar(timecomb/ks,reflccomb,yerr=errreflccomb,fmt='k-')
-        # plt.plot(timecomb/ks,windowcomb,'g-')
-        # plt.errorbar(timecomb/ks,complccomb,yerr=errcomplccomb,\
-        #              label=labelsrccomp,fmt='r-')
-        # plt.tick_params(axis='both', which='major', labelsize=14)
-        # plt.legend(loc="best")
-        # plt.title("XMM-Newton (EPIC-PN) lightcurves")
-        # plt.ylabel("Count rate [s$^{-1}$]",fontsize=14)
-        # plt.xlabel("Time [ks]",fontsize=14)
-        # plt.show()
-                                                        
-        # #Compare CPSDs
-        # countcomp = ratecomp*bsize
-        # cerrorcomp = errorcomp*bsize
-        # countref = rateref*bsize
-        # cerrorref = errorref*bsize
-        # countcompbkg = ratecompbkg*bsize
-        # countrefbkg = raterefbkg*bsize
-    
-        # LcComp = Lightcurve(timecomp,countcomp,error=cerrorcomp,\
-        #                     dt=bsize)
-        # LcRef = Lightcurve(timecomp,countref,error=cerrorref,\
-        #                    dt=bsize)
-        # evcomp = EventList.from_lc(LcComp)   
-        # evref = EventList.from_lc(LcRef)
-                        
-        # cpsdfrq,cpsd,cspderr =\
-        # cross_spectrum_stingray(evref,evcomp,Mseg,bsize,normpow,fminb,fmaxb)
+                refevfile = "epn_net_obs" + ObsId + "_1_en" +\
+                             str(ennum) + "_ref.fits"
+                            
+                complcfile = "epn_net_obs" + ObsId + "_1_en" +\
+                             str(ennum) + "_comp.lc"
                 
-        # fxy, cpxyav, cpxyaverr = covariance_spectrum(complccomb,\
-        #                          errcomplccomb,reflccomb,errreflccomb,\
-        #                          complcbkgcomb,reflcbkgcomb,\
-        #                          Mseg,bfactor,bsize,plot,\
-        #                          statpow,fminb,fmaxb,windowref)
-        
-        # plt.figure()
-        # plt.subplot(211)
-        # plt.errorbar(cpsdfrq,np.real(cpsd),\
-        #              yerr=abs(np.real(cspderr)),fmt='g.')
-        # plt.errorbar(fxy,np.real(cpxyav),\
-        #              yerr=abs(np.real(cpxyaverr)),fmt='m.')
-        # plt.subplot(212)
-        # plt.errorbar(cpsdfrq,np.imag(cpsd),\
-        #              yerr=abs(np.imag(cspderr)),fmt='g.')
-        # plt.errorbar(fxy,np.imag(cpxyav),\
-        #              yerr=abs(np.imag(cpxyaverr)),fmt='m.')
-        # plt.show()
-
-        # Compute covariance
-        # Time domain
-        intcovtd,intcoverrtd =\
-        covariance_time_domain(ratecomp,errorcomp,rateref,errorref,\
-                               Mseg)
-        covtd.append(intcovtd)
-        dcovtd.append(intcoverrtd)
-        
-        # Frequency domain    
-        windowcomb = np.array(windowcomb)   
-        fcov,intcov,intcoverr,avgcpcov,avgcperrcov =\
-        covariance_spectrum(complccomb,errcomplccomb,\
-                            reflccomb,errreflccomb,complcbkgcomb,\
-                            reflcbkgcomb,Mseg,bfactor,bsize,plot,\
-                            statpow,fminb,fmaxb,windowcomb)
-        cov.append(intcov)
-        dcov.append(intcoverr)
+                compbkgfile = "epn_bkg_obs" + ObsId + "_1_en" +\
+                              str(ennum) + "_comp.lc"
+                
+                compevfile = "epn_net_obs" + ObsId + "_1_en" +\
+                             str(ennum) + "_comp.fits"
+                
+                infilecov = "covflux" + str(k3z+1) +\
+                "_" + str(ObsId) + ".dat"
+                outfilecov = "covspec" + str(k3z+1) +\
+                "_" + str(ObsId) + ".pha"
+                groupfilecov = "covspec_grouped_" + str(k3z+1) + "_" +\
+                str(ObsId) + ".pha"
+                
+                hdulistref = fits.open(reflcfile)
+                dataref = hdulistref[1].data
+                tstartR = hdulistref[2].data['START']
+                tstopR = hdulistref[2].data['STOP']
+                bsize = hdulistref[1].header['TIMEDEL']
+                telapse = hdulistref[1].header['EXPOSURE']
+                timeref = dataref['TIME']  
+                rateref = dataref['RATE']
+                errorref = dataref['ERROR']
+                
+                arraysW = np.transpose(np.column_stack((timeref,rateref)))
+                windowref = rect_window(arraysW,tstartR,tstopR)
+                                
+                #Choose Mseg depending on exposure time
+                Mseg = 0
+                            
+                if (telapse > 100*ks):
+                    Mseg = 2
             
-cov = np.array(cov)
-dcov = np.array(dcov)
-covtd = np.array(covtd)
-dcovtd = np.array(dcovtd)
-
-# plt.figure()
-# # plt.subplot(211)
-# # plt.errorbar(covspecEst,covspecst,yerr=covspecerrst,fmt='r.',\
-# #              label="Method 1")
-# plt.errorbar(energies,cov,yerr=dcov,fmt='b.',label="Method 2")
-# # plt.subplot(212)
-# # plt.errorbar(energies,covtd,yerr=dcovtd,fmt='g.',label="Method 3")
-# plt.legend(loc="best")
-# plt.show()
-
-# Convert to XSPEC readable format using response file
-hdulist = fits.open(rmffile)
-data = hdulist[2].data
-channel = data['CHANNEL']
-EMIN = data['E_MIN']
-EMAX = data['E_MAX']
-ndetchans = len(channel)
-chans = np.arange(1,ndetchans+1,1)
-
-if(np.sum(cov)>0 and np.sum(cov)>0):
-        
-    fluxes = np.zeros(len(chans))
-    dfluxes = np.zeros(len(chans))
-    
-    for j3st in range(len(cov)):
-        for k3st in range(len(chans)):
-            if(0.5*(EMIN[k3st]+EMIN[k3st])>=energies[j3st]):
-                fluxes[chans[k3st]] = cov[j3st]
-                dfluxes[chans[k3st]] = dcov[j3st]
-                break
-
-    # for j3st in range(len(covspecst)):
-    #     for k3st in range(len(chans)):
-    #         if(0.5*(EMIN[k3st]+EMIN[k3st])>=covspecEst[j3st]):
-    #             fluxes[chans[k3st]] = covspecst[j3st]
-    #             dfluxes[chans[k3st]] = covspecerrst[j3st]
-    #             break
-        
-    Qcov = np.column_stack((chans,fluxes,dfluxes))
-    np.savetxt(infilecov,Qcov,fmt='%i %s %s',delimiter='   ')
+                if (telapse > 50*ks and telapse <= 100*ks):
+                    Mseg = 7
+            
+                if (telapse > 25*ks and telapse <= 50*ks):
+                    Mseg = 4
+            
+                if (telapse > 15*ks and telapse <= 25*ks):
+                    Mseg = 2
+            
+                if (telapse <= 15*ks):
+                    Mseg = 1
+                            
+                #Reference band (background)
+                hdulistref_bkg = fits.open(refbkgfile)
+                dataref_bkg = hdulistref_bkg[1].data
+                timerefbkg = dataref_bkg['TIME']  
+                raterefbkg = dataref_bkg['RATE']
+                errorrefbkg = dataref_bkg['ERROR']
+            
+                dateobs = hdulistref_bkg[0].header['DATE-OBS'].split("T")[0]
+                dateend = hdulistref_bkg[0].header['DATE-END'].split("T")[0]
+                timeobs = hdulistref_bkg[0].header['DATE-OBS'].split("T")[1]
+                timeend = hdulistref_bkg[0].header['DATE-END'].split("T")[1]
+                raobj = hdulistref_bkg[0].header['RA_OBJ']
+                decobj = hdulistref_bkg[0].header['DEC_OBJ']
+                telescope = hdulistref_bkg[0].header['TELESCOP']
+                filterobs = hdulistref_bkg[0].header['FILTER']
+                inst = hdulistref_bkg[0].header['INSTRUME']
+                tstartRbkg = hdulistref[2].data['START']
+                tstopRbkg = hdulistref[2].data['STOP']
+            
+                timeref = np.array(timeref)
+                rateref = np.array(rateref)
+                errorref = np.array(errorref)
+                raterefbkg = np.array(raterefbkg)
+                errorrefbkg = np.array(errorrefbkg)
+                                                                        
+                hdu3 = fits.open(complcfile)    
+                timecomp = hdu3[1].data['TIME']
+                ratecomp = hdu3[1].data['RATE']
+                errorcomp = hdu3[1].data['ERROR']
+                obsidcomp = hdu3[0].header['OBS_ID']
                 
-    comm_unfold = "ascii2pha infile=" + infilecov + " outfile=" + outfilecov +\
-    " chanpres=yes dtype=2 rows=- qerror=yes tlmin=1 detchans=" +\
-    str(ndetchans) + " telescope=" + str(telescope) +\
-    " instrume=" + str(inst) + " detnam=EPIC-PN" +\
-    " filter=" + str(filterobs) + " phaversn=1.1.0 " +\
-    "exposure=" + str(telapse/Mseg) + " backscal=" + str(backscal) +\
-    " backfile=" + backfile + " corrscal=" + str(corrscal) +\
-    " corrfile=NONE areascal=" + str(areascal) +\
-    " ancrfile=" + ancrfile + " respfile=" + rmffile +\
-    " date_obs=" + str(dateobs) + " time_obs=" + str(timeobs) +\
-    " date_end=" + str(dateend) + " time_end=" + str(timeend) +\
-    " ra_obj=" + str(raobj) + " dec_obj=" + str(decobj) +\
-    " equinox=2000.0 hduclas2=TOTAL chantype=PI clobber=yes"
-    os.system(comm_unfold)
+                hdu4 = fits.open(compbkgfile)    
+                ratecompbkg = hdu4[1].data['RATE']
+                errorcompbkg = hdu4[1].data['ERROR']
+                tstartC = hdu3[2].data['START']
+                tstopC = hdu3[2].data['STOP']
+                            
+                #Remove BTIs and NANs from reference band and comparison band
+                arraysR = np.transpose(np.column_stack((rateref,errorref,\
+                          raterefbkg,errorrefbkg,ratecomp,errorcomp,\
+                          ratecompbkg,errorcompbkg,timeref)))
+                arraysR, arraysN = remove_nans(arraysR,tstartR,tstopR) 
+                
+                #Concatenate LC from a single observation horizontally 
+                #(to remove NANs)
+                rateref,errorref,raterefbkg,\
+                errorrefbkg,ratecomp,errorcomp,ratecompbkg,errorcompbkg,\
+                timeref = arraysN
+                bsizeref = timeref[1]-timeref[0]
+                timeref = np.arange(0,len(rateref),1)*bsizeref
+                timecomp = timeref   
+                telapse = timecomp[-1]-timecomp[0]
+                                        
+                #Concatenate LCs from different observations
+                for k3 in range(len(rateref)):
+                    
+                    windowcomb.append(windowref[k3])
+                    reflccomb.append(rateref[k3])
+                    errreflccomb.append(errorref[k3])
+                    complccomb.append(ratecomp[k3])
+                    errcomplccomb.append(errorcomp[k3])
+                    
+                    reflcbkgcomb.append(raterefbkg[k3])
+                    errreflcbkgcomb.append(errorrefbkg[k3])
+                    complcbkgcomb.append(ratecompbkg[k3])
+                    errcomplcbkgcomb.append(errorcompbkg[k3])
+                    
+        if(len(reflccomb)>0):
+            
+            windowcomb = np.array(windowcomb)
+            reflccomb = np.array(reflccomb)
+            errreflccomb = np.array(errreflccomb)
+            reflcbkgcomb = np.array(reflcbkgcomb)
+            errreflcbkgcomb = np.array(errreflcbkgcomb)
+            complccomb = np.array(complccomb)
+            errcomplccomb = np.array(errcomplccomb)
+            complcbkgcomb = np.array(complcbkgcomb)
+            errcomplcbkgcomb = np.array(errcomplcbkgcomb)
+                    
+            timecomb = np.arange(0,len(reflccomb),1)*bsize
+            
+            #Unfold spectrum using instrumental response      
+            rmffile = "EPN_" + str(ObsId) + "_1.rmf"
+            ancrfile = "EPN_" + str(ObsId) + "_1.arf"
+            specfile = "epn_spec1" + "_grp_" + str(ObsId) + ".fits"
+            infile = "covflux_" + str(ObsId) + ".dat"
+            outfile = "covspec_" + str(ObsId) + ".pha"
+                    
+            hdulist2 = fits.open(specfile)
+            header2 = hdulist2[1].header
+            backscal = header2['BACKSCAL']
+            corrscal = header2['CORRSCAL']
+            areascal = header2['AREASCAL']
+            backfile = "NONE"
+                
+            energymin = float(hdu3[1].header['CHANMIN'])/1000.
+            energymax = float(hdu3[1].header['CHANMAX'])/1000.
+            engy = 0.5*(energymin+energymax)
+            dengy = 0.5*(energymax-energymin)
+            
+            energies.append(engy)
+            denergies.append(dengy)
+                                            
+            #Plot LCs
+            laben = str(float(energymin)) + "-" + str(float(energymax))
+            labelsrccomp = "Comparison band LC: " + laben + " keV"    
+            
+            # fvarcomp, dfvarcomp = Fracvar(ratecomp,errorcomp)
+            # fvarref, dfvarref = Fracvar(rateref,errorref)
+            
+            # print("Energy: ",engy," ± ",dengy,\
+            #       "Frac-var: ",fvarcomp," ±",dfvarcomp)
+            # print("Energy: ",engy," ± ",dengy,\
+            #       "Frac-var: ",fvarref," ± ",dfvarref)
+            # print("")
+                                                            
+            #Compare CPSDs
+            countcomp = ratecomp*bsize
+            cerrorcomp = errorcomp*bsize
+            countref = rateref*bsize
+            cerrorref = errorref*bsize
+            countcompbkg = ratecompbkg*bsize
+            countrefbkg = raterefbkg*bsize
+        
+            LcComp = Lightcurve(timecomp,countcomp,error=cerrorcomp,\
+                                dt=bsize)
+            LcRef = Lightcurve(timecomp,countref,error=cerrorref,\
+                               dt=bsize)
+            evcomp = EventList.from_lc(LcComp)   
+            evref = EventList.from_lc(LcRef)
+                            
+            # cpsdfrq,cpsd,cspderr =\
+            # cross_spectrum_stingray(evref,evcomp,\
+            # Mseg,bsize,normpow,fminb,fmaxb)
+                    
+            # fxy, cpxyav, cpxyaverr = covariance_spectrum(complccomb,\
+            #                          errcomplccomb,reflccomb,errreflccomb,\
+            #                          complcbkgcomb,reflcbkgcomb,\
+            #                          Mseg,bfactor,bsize,plot,\
+            #                          statpow,fminb,fmaxb,windowref)
+            
+            # plt.figure()
+            # plt.subplot(211)
+            # plt.errorbar(cpsdfrq,np.real(cpsd),\
+            #              yerr=abs(np.real(cspderr)),fmt='g.')
+            # plt.errorbar(fxy,np.real(cpxyav),\
+            #              yerr=abs(np.real(cpxyaverr)),fmt='m.')
+            # plt.subplot(212)
+            # plt.errorbar(cpsdfrq,np.imag(cpsd),\
+            #              yerr=abs(np.imag(cspderr)),fmt='g.')
+            # plt.errorbar(fxy,np.imag(cpxyav),\
+            #              yerr=abs(np.imag(cpxyaverr)),fmt='m.')
+            # plt.show()
     
-    #Group spectrum using ftgrouppha
-    comm_group = "ftgrouppha infile=" + outfilecov + " backfile=" +\
-                  backfile + " respfile=" + rmffile +\
-                  " outfile=" + groupfilecov +\
-                  " grouptype=snmin groupscale=" +\
-                  str(groupscale) + " minchannel=-1 maxchannel=-1"
-    os.system(comm_group)
+            # # Compute covariance
+            # # Time domain
+            # intcovtd,intcoverrtd =\
+            # covariance_time_domain(ratecomp,errorcomp,rateref,errorref,\
+            #                        Mseg)
+            # covtd.append(intcovtd)
+            # dcovtd.append(intcoverrtd)
+            
+            # tmin = 40*ks
+            # complccomb = complccomb[timecomb>tmin]
+            # errcomplccomb = errcomplccomb[timecomb>tmin]
+            # reflccomb = reflccomb[timecomb>tmin]
+            # errreflccomb = errreflccomb[timecomb>tmin]
+            # complcbkgcomb = complcbkgcomb[timecomb>tmin]
+            # reflcbkgcomb = reflcbkgcomb[timecomb>tmin]
+            # timecomb = timecomb[timecomb>tmin]
+            
+            # # plt.plot(timecomb/ks,windowcomb,'k-')
+            # plt.errorbar(timecomb/ks,reflccomb,yerr=errreflccomb,fmt='k-')
+            # plt.errorbar(timecomb/ks,complccomb,yerr=errcomplccomb,\
+            #              label=labelsrccomp,fmt='r-')
+            # plt.tick_params(axis='both', which='major', labelsize=14)
+            # plt.legend(loc="best")
+            # plt.title("XMM-Newton (EPIC-PN) lightcurves")
+            # plt.ylabel("Count rate [s$^{-1}$]",fontsize=14)
+            # plt.xlabel("Time [ks]",fontsize=14)
+            # plt.show()
+            
+            # Frequency domain    
+            windowcomb = np.array(windowcomb)   
+            intcov,intcoverr =\
+            covariance_spectrum(complccomb,errcomplccomb,\
+                                reflccomb,errreflccomb,complcbkgcomb,\
+                                reflcbkgcomb,Mseg,bfactor,bsize,plot,\
+                                statpow,fminb[k3z],fmaxb[k3z],windowcomb)
+            cov.append(intcov)
+            dcov.append(intcoverr)
+            
+    cov = np.array(cov)
+    dcov = np.array(dcov)
+    covtd = np.array(covtd)
+    dcovtd = np.array(dcovtd)
+
+    # plt.figure()
+    # # plt.subplot(211)
+    # # plt.errorbar(covspecEst,covspecst,yerr=covspecerrst,fmt='r.',\
+    # #              label="Method 1")
+    # plt.errorbar(energies,cov,yerr=dcov,fmt='b.',label="Method 2")
+    # # plt.subplot(212)
+    # # plt.errorbar(energies,covtd,yerr=dcovtd,fmt='g.',label="Method 3")
+    # plt.legend(loc="best")
+    # plt.show()
+
+    # Convert to XSPEC readable format using response file
+    hdulist = fits.open(rmffile)
+    data = hdulist[2].data
+    channel = data['CHANNEL']
+    EMIN = data['E_MIN']
+    EMAX = data['E_MAX']
+    ndetchans = len(channel)
+    chans = np.arange(1,ndetchans+1,1)
+    
+    if(np.sum(cov)>0 and np.sum(dcov)>0):
+            
+        fluxes = np.zeros(len(chans))
+        dfluxes = np.zeros(len(chans))
+        
+        for j3 in range(len(cov)):
+            for k3p in range(len(chans)):
+                if(0.5*(EMIN[k3p]+EMIN[k3p])>=energies[j3]):
+                    fluxes[chans[k3p]] = cov[j3]
+                    dfluxes[chans[k3p]] = dcov[j3]
+                    break
+    
+        Qcov = np.column_stack((chans,fluxes,dfluxes))
+        np.savetxt(infilecov,Qcov,fmt='%i %s %s',delimiter='   ')
+        
+        comm_unfold = "ascii2pha infile=" + infilecov +\
+        " outfile=" + outfilecov +\
+        " chanpres=yes dtype=2 rows=- qerror=yes tlmin=1 detchans=" +\
+        str(ndetchans) + " telescope=" + str(telescope) +\
+        " instrume=" + str(inst) + " detnam=EPIC-PN" +\
+        " filter=" + str(filterobs) + " phaversn=1.1.0 " +\
+        "exposure=" + str(telapse/Mseg) + " backscal=" + str(backscal) +\
+        " backfile=" + backfile + " corrscal=" + str(corrscal) +\
+        " corrfile=NONE areascal=" + str(areascal) +\
+        " ancrfile=" + ancrfile + " respfile=" + rmffile +\
+        " date_obs=" + str(dateobs) + " time_obs=" + str(timeobs) +\
+        " date_end=" + str(dateend) + " time_end=" + str(timeend) +\
+        " ra_obj=" + str(raobj) + " dec_obj=" + str(decobj) +\
+        " equinox=2000.0 hduclas2=TOTAL chantype=PI clobber=yes"
+        os.system(comm_unfold)
+            
+        #Group spectrum using ftgrouppha
+        comm_group = "ftgrouppha infile=" + outfilecov + " backfile=" +\
+                      backfile + " respfile=" + rmffile +\
+                      " outfile=" + groupfilecov +\
+                      " grouptype=snmin groupscale=" +\
+                      str(groupscale) + " minchannel=-1 maxchannel=-1"
+        os.system(comm_group)
+    
+        fluxesst = np.zeros(len(chans))
+        dfluxesst = np.zeros(len(chans))
+    
+        for j3st in range(len(covspecst)):
+            for k3st in range(len(chans)):
+                if(0.5*(EMIN[k3st]+EMIN[k3st])>=covspecEst[j3st]):
+                    fluxesst[chans[k3st]] = covspecst[j3st]
+                    dfluxesst[chans[k3st]] = covspecerrst[j3st]
+                    break
+        
+        Qcovst = np.column_stack((chans,fluxesst,dfluxesst))
+        np.savetxt(infilecovst,Qcovst,fmt='%i %s %s',delimiter='   ')
+        
+        comm_unfoldst = "ascii2pha infile=" + infilecovst +\
+        " outfile=" + outfilecovst +\
+        " chanpres=yes dtype=2 rows=- qerror=yes tlmin=1 detchans=" +\
+        str(ndetchans) + " telescope=" + str(telescope) +\
+        " instrume=" + str(inst) + " detnam=EPIC-PN" +\
+        " filter=" + str(filterobs) + " phaversn=1.1.0 " +\
+        "exposure=" + str(telapse/Mseg) + " backscal=" + str(backscal) +\
+        " backfile=" + backfile + " corrscal=" + str(corrscal) +\
+        " corrfile=NONE areascal=" + str(areascal) +\
+        " ancrfile=" + ancrfile + " respfile=" + rmffile +\
+        " date_obs=" + str(dateobs) + " time_obs=" + str(timeobs) +\
+        " date_end=" + str(dateend) + " time_end=" + str(timeend) +\
+        " ra_obj=" + str(raobj) + " dec_obj=" + str(decobj) +\
+        " equinox=2000.0 hduclas2=TOTAL chantype=PI clobber=yes"
+        os.system(comm_unfoldst)
+            
+        #Group spectrum using ftgrouppha (stingray)
+        comm_groupst = "ftgrouppha infile=" + outfilecovst + " backfile=" +\
+                      backfile + " respfile=" + rmffile +\
+                      " outfile=" + groupfilecovst +\
+                      " grouptype=snmin groupscale=" +\
+                      str(groupscale) + " minchannel=-1 maxchannel=-1"
+    os.system(comm_groupst)
 
 
 
